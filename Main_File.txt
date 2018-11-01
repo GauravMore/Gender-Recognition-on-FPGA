@@ -1,0 +1,243 @@
+% Description: Gender Recognition using FPGA Matlab Code
+% Programmer: Aniket Ratnakar and Gaurav More
+% Revision: 1.18
+% Copyright: 2015
+% Note: Below code only provides the final results on Matlab. FPGA interface details are not provided in this file.
+
+close all;
+clear all;
+
+% Reads the image from the file specified by filename, inferring the format 
+% of the file from its contents.
+
+I = imread('C:\Users\Desktop\Project files\Image\A.jpg');
+[numrows numcols c] = size(I);
+A=im2double(I);  % Convert the intensity image I to double precision, rescaling 
+                 % the data if necessary
+
+% Mean Filtering: Determine the mean of each pixel in the image with respect  
+% to the pixels around the pixels which is under process.
+
+for k=1:c
+
+for i=2:numrows-1
+  for j=2:numcols-1      
+    Value=(A(i-1,j-1,k)+A(i,j-1,k)+A(i+1,j-1,k)+A(i-1,j,k)+
+	A(i,j,k)+A(i+1,j,k)+A(I1,j+1,k)+A(i,j,k)+A(i+1,j+1,k))/9;
+     mean_image(i,j,k)=Value;
+  end
+end
+  
+for i=1:numrows
+    mean_image(i,1,1)=A(i,1,k);
+    mean_image(i,numcols,k)=A(i,numcols,k);
+end
+
+for j=2:(numcols-1)
+    mean_image(1,j,k)=A(1,j,k);
+    mean_image(numrows,j,k)=A(numrows,j,k);
+end
+
+end
+
+imshow(mean_image); % Result after applying mean filtering process to the image
+
+% Determine the approximate row for eyes and eyebrows
+% Determine the centroid of the eyes in the image
+% Determine the center point between two eyes
+
+% Crop and Convert RGB image to gray scale image for detecting the edges in the 
+% image using Sobel Filter. Change in contrast results in change in state.
+
+B=imcrop(mean_image,[251.5 215.5 202 58]);
+bw=edge(rgb2gray(B),'sobel'); 
+imshow(bw);
+[label num]=bwlabel(bw,8);
+graindata=regionprops(label,'all');
+
+for h=1:num
+
+% Eccentricity function is used to determine the conic sections in the image.
+% Determine area and radius of the obtained ellipse to find the centroid of the  
+% ellipse. Calculate the distance of that point in Y axis.
+
+if graindata(h).Eccentricity<0.94
+    found=h;
+    area=graindata(found).Area;
+    radius=sqrt(area/pi); 
+    radius=1.2*radius;
+    centroid=graindata(found).Centroid;
+    t=0:pi/20:2*pi;
+    x=centroid(1)+radius*cos(t);
+    y=centroid(2)+radius*sin(t);
+    hold on;
+    plot(x,y)  ;
+    o=214;
+    R=y+o;
+    R=mean(R);
+    R=floor(R);
+end
+end
+
+% Attribut - Eyebrow thickness and dimensions
+% Detect eye brows by croping the image with respect to R and Column of the image 
+% to detect the area of the eye brows for processing.
+
+eye_brows=0;
+for m=R-25:1:R-10
+   for n=250:1:450
+       r=A(m,n,1);
+       g=A(m,n,2);
+       e=A(m,n,3);
+       if r>0 && r<80 || e>0 && e<80 || g>0 && g<80
+       eye_brows=eye_brows+1;
+       end
+    end
+end
+Z=0;
+
+if eye_brows>7500
+    Z=Z+0.30;
+end
+
+% Attribute - Jaw region
+% Crop the image with respect to the R to detect the Jaw area. Convert the image 
+% into double precision to obtain greater precision. Perform the logarithmic  
+% operation on image to expand the lighter pixels. Convert the cropped part of 
+% the image to black and white image for further analysis. Use the Sobel filter  
+% in x direction to determine the edges.
+
+A=I;
+Y=[240,470];
+X=[R+80,R+210];
+m=0;
+
+%% Cut the jaw area
+
+for l=X(1):X(2)
+ for m=Y(1):Y(2)
+    jaw_area(l-X(1)+1,m-Y(1)+1)=A(l,m);
+ end
+end
+
+[numrow numcol color]=size(jaw_area);
+jaw_double=im2double(jaw_area);
+
+%% Do the logarithmic operation to expand the lighter pixels
+
+log_jaw=1.8*log(1+jaw_double);
+
+%%convert to Black and White image
+
+for s=1:numrow
+  for d=1:numcol 
+      if (log_jaw(s,d)>=(210/255));
+           bw_jaw(s,d)=255;
+      else
+          bw_jaw(s,d)=0;
+      end
+   end
+end
+
+%% Perform ddge detection using Sobel Filter (X direction)
+
+xsobel_img=zeros(numrow,numcol,color);
+test=bw_jaw;
+
+for s1=1:color
+    for s2=2:(numrow-1)
+        for s3=2:(numcol-1)
+  Value=test(s2-1,s3-1,s1)-test(s2-1,s3+1,s1)+2*(test(s2,s3-1,s1)- 
+  test(s2,s3+1,s1))+test(s2+1,s3-1,s1)-test(s2+1,s3+1,s1);
+        if(abs(Value*255)>0)
+            xsobel_img(s2,s3,s1)=255;
+        end
+        end
+   end
+end
+
+%% Plot the results for future data and results anaylsis. 
+
+subplot(2,2,3);
+imshow(bw_jaw);
+subplot(2,2,1);
+imshow(jaw_area);
+subplot(2,2,2);
+imshow(log_jaw);
+subplot(2,2,4);
+imshow(xsobel_img);
+
+%% count the jaw length
+
+count=0;    
+for s1=1:color
+    for s2=1:numrow
+        for s3=1:numcol
+        if(xsobel_img(s2,s3,s1)~=0)
+           count=count+1;
+        end
+        end
+   end
+end
+
+if (count>700)
+    Z=Z+0.25;
+end
+
+% Attribute - Hair thickness
+% Crop the image with respect to R and column of the image to detect the hair in 
+% the image. Determine the number of dark pixels to conclude the final results.
+
+B=I;
+imtool(B);
+amount=0;
+
+for i=R+80:R+210
+   for j=180:1:250
+       r=B(i,j,1);
+       g=B(i,j,2);
+       e=B(i,j,3);
+       if r>0 && r<120 || e>0 && e<120 || g>0 && g<120
+       amount=amount+1;
+       end
+   end
+end
+
+if (amount<=6000)
+    Z=Z+0.35;
+end
+
+% Attribute - Area of face
+% Crop the image with respect to the R and column of the image to detect the size 
+% of the face. Determine the area of the face with the help of pixels.
+
+area=0;
+
+for i=R-90:1:R+220
+   for j=240:1:470
+       r=I(i,j,1);
+       g=I(i,j,2);
+       e=I(i,j,3);
+       if r>140 && r<220 || e>140 && e<220 || g>140 && g<220
+     area=area+1;
+       end
+   end
+end
+
+if area>2000
+    Z=Z+0.10;
+end
+
+% Final Decision
+
+X=0;
+Y=0;
+
+if Z>=0.70
+    X=3;
+    msgbox('Its a male');
+else 
+    msgbox('Its a female');    
+    Y=5;
+end
+
